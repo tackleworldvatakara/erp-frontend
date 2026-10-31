@@ -30,10 +30,10 @@ const productSchema = z.object({
   category:         z.string().optional(),
   brand:            z.string().optional(),
   unit:             z.enum(UNITS),
-  purchaseCost:     z.coerce.number().min(0, 'Cannot be negative'),
-  sellingPrice:     z.coerce.number().min(0, 'Cannot be negative'),
-  currentStock:     z.coerce.number().min(0, 'Cannot be negative'),
-  minStockThreshold:z.coerce.number().min(0, 'Cannot be negative'),
+  purchaseCost:     z.coerce.number().min(1, 'Purchase cost is required'),
+  sellingPrice:     z.coerce.number().min(1, 'Selling price is required'),
+  currentStock:     z.coerce.number().min(1, 'Opening stock is required'),
+  minStockThreshold:z.coerce.number().min(1, 'Low stock threshold is required'),
   description:      z.string().optional(),
 });
 type ProductFormData = z.infer<typeof productSchema>;
@@ -123,7 +123,7 @@ export default function ProductsPage() {
 
   const { control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { unit: 'piece', purchaseCost: 0, sellingPrice: 0, currentStock: 0, minStockThreshold: 10 },
+    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: undefined },
   });
   const nameValue = watch('name');
 
@@ -178,7 +178,7 @@ export default function ProductsPage() {
   // ── Dialog open ───────────────────────────────────────────────────────────────
   function openAdd() {
     setEditProduct(null);
-    reset({ unit: 'piece', purchaseCost: 0, sellingPrice: 0, currentStock: 0, minStockThreshold: 10, name: '', sku: '', category: '', brand: '', description: '' });
+    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: undefined, name: '', sku: '', category: '', brand: '', description: '' });
     setDialogOpen(true);
   }
 
@@ -820,7 +820,7 @@ export default function ProductsPage() {
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
               <Controller name="purchaseCost" control={control} render={({ field }) => (
                 <Box flex={1}>
-                  <FieldLabel>Purchase Cost (₹)</FieldLabel>
+                  <FieldLabel required>Purchase Cost (₹)</FieldLabel>
                   <TextField {...field} fullWidth size="small" type="number"
                     error={!!errors.purchaseCost} helperText={errors.purchaseCost?.message || 'What you paid the supplier'}
                     InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
@@ -863,7 +863,7 @@ export default function ProductsPage() {
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
               <Controller name="currentStock" control={control} render={({ field }) => (
                 <Box flex={1}>
-                  <FieldLabel>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
+                  <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
                   <TextField {...field} fullWidth size="small" type="number"
                     error={!!errors.currentStock} helperText={editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock'}
                     inputProps={{ min: 0 }} />
@@ -871,7 +871,7 @@ export default function ProductsPage() {
               )} />
               <Controller name="minStockThreshold" control={control} render={({ field }) => (
                 <Box flex={1}>
-                  <FieldLabel>Low Stock Alert Threshold</FieldLabel>
+                  <FieldLabel required>Low Stock Alert Threshold</FieldLabel>
                   <TextField {...field} fullWidth size="small" type="number"
                     helperText="Alert when stock falls to or below this" inputProps={{ min: 0 }} />
                 </Box>
