@@ -123,7 +123,7 @@ export default function ProductsPage() {
 
   const { control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: undefined },
+    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10 },
   });
   const nameValue = watch('name');
 
@@ -178,7 +178,7 @@ export default function ProductsPage() {
   // ── Dialog open ───────────────────────────────────────────────────────────────
   function openAdd() {
     setEditProduct(null);
-    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: undefined, name: '', sku: '', category: '', brand: '', description: '' });
+    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, name: '', sku: '', category: '', brand: '', description: '' });
     setDialogOpen(true);
   }
 
