@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -9,7 +9,6 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
-import Link from '@mui/material/Link';
 import Container from '@mui/material/Container';
 import InputAdornment from '@mui/material/InputAdornment';
 import IconButton from '@mui/material/IconButton';
@@ -163,14 +162,7 @@ const LoginPage: React.FC = () => {
           </form>
         </Paper>
 
-        <Box mt={2} textAlign="center">
-          <Typography variant="body2" color="text.secondary">
-            Don't have an account?{' '}
-            <Link component={RouterLink} to="/setup" underline="hover" fontWeight={600}>
-              Set up now
-            </Link>
-          </Typography>
-        </Box>
+
 
       </Container>
     </Box>
