@@ -9,9 +9,9 @@ import {
   Add as AddIcon, Search as SearchIcon, Edit as EditIcon,
   Delete as DeleteIcon, ToggleOn as ToggleOnIcon, ToggleOff as ToggleOffIcon,
   Inventory2 as InventoryIcon, Close as CloseIcon,
-  Tune as TuneIcon,
+  Tune as TuneIcon, Palette as PaletteIcon,
 } from '@mui/icons-material';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useSnackbar } from 'notistack';
@@ -24,6 +24,11 @@ import { Product } from '../types/product.types';
 
 const UNITS = ['piece', 'pair', 'box', 'kg', 'meter', 'liter', 'set', 'roll'] as const;
 
+const productVariantSchema = z.object({
+  color: z.string().min(1, 'Color name required'),
+  quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
+});
+
 const productSchema = z.object({
   name:             z.string().min(1, 'Product name is required'),
   sku:              z.string().min(1, 'SKU is required'),
@@ -32,10 +37,18 @@ const productSchema = z.object({
   unit:             z.enum(UNITS),
   purchaseCost:     z.coerce.number().min(1, 'Purchase cost is required'),
   sellingPrice:     z.coerce.number().min(1, 'Selling price is required'),
-  currentStock:     z.coerce.number().min(1, 'Opening stock is required'),
+  currentStock:     z.coerce.number().min(0).optional(),
   minStockThreshold:z.coerce.number().min(1, 'Low stock threshold is required'),
+  variants:         z.array(productVariantSchema).optional().default([]),
   description:      z.string().optional(),
-});
+}).refine((data) => {
+  // If no variants, currentStock is required
+  if (!data.variants || data.variants.length === 0) {
+    return data.currentStock !== undefined && data.currentStock >= 1;
+  }
+  return true;
+}, { message: 'Opening stock is required', path: ['currentStock'] });
+
 type ProductFormData = z.infer<typeof productSchema>;
 
 function generateSKU(name: string) {
@@ -123,9 +136,12 @@ export default function ProductsPage() {
 
   const { control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10 },
+    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, variants: [] },
   });
+  const { fields: variantFields, append: appendVariant, remove: removeVariant } = useFieldArray({ control, name: 'variants' });
+  const [newVariantColor, setNewVariantColor] = useState('');
   const nameValue = watch('name');
+  const watchedVariants = watch('variants') ?? [];
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
@@ -178,13 +194,15 @@ export default function ProductsPage() {
   // ── Dialog open ───────────────────────────────────────────────────────────────
   function openAdd() {
     setEditProduct(null);
-    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, name: '', sku: '', category: '', brand: '', description: '' });
+    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, variants: [], name: '', sku: '', category: '', brand: '', description: '' });
+    setNewVariantColor('');
     setDialogOpen(true);
   }
 
   function openEdit(p: Product) {
     setEditProduct(p);
-    reset({ name: p.name, sku: p.sku, category: p.category ?? '', brand: p.brand ?? '', unit: p.unit, purchaseCost: p.purchaseCost, sellingPrice: p.sellingPrice, currentStock: p.currentStock, minStockThreshold: p.minStockThreshold, description: p.description ?? '' });
+    reset({ name: p.name, sku: p.sku, category: p.category ?? '', brand: p.brand ?? '', unit: p.unit, purchaseCost: p.purchaseCost, sellingPrice: p.sellingPrice, currentStock: p.currentStock, minStockThreshold: p.minStockThreshold, variants: p.variants ?? [], description: p.description ?? '' });
+    setNewVariantColor('');
     setDialogOpen(true);
   }
 
@@ -196,11 +214,18 @@ export default function ProductsPage() {
   async function onSubmit(data: ProductFormData) {
     setSaving(true);
     try {
+      const payload = {
+        ...data,
+        variants: data.variants ?? [],
+        currentStock: (data.variants && data.variants.length > 0)
+          ? data.variants.reduce((s, v) => s + v.quantity, 0)
+          : (data.currentStock ?? 0),
+      };
       if (editProduct) {
-        await productsApi.updateProduct(editProduct._id, data);
+        await productsApi.updateProduct(editProduct._id, payload);
         enqueueSnackbar('Product updated', { variant: 'success' });
       } else {
-        await productsApi.createProduct(data);
+        await productsApi.createProduct(payload);
         enqueueSnackbar('Product created', { variant: 'success' });
       }
       setDialogOpen(false);
@@ -861,22 +886,136 @@ export default function ProductsPage() {
             <Divider sx={{ mb: 2, mt: 0.5 }} />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
-              <Controller name="currentStock" control={control} render={({ field }) => (
-                <Box flex={1}>
-                  <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
-                  <TextField {...field} fullWidth size="small" type="number"
-                    error={!!errors.currentStock} helperText={editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock'}
-                    inputProps={{ min: 0 }} />
-                </Box>
-              )} />
+              {/* Only show Opening Stock if no variants defined */}
+              {watchedVariants.length === 0 && (
+                <Controller name="currentStock" control={control} render={({ field }) => (
+                  <Box flex={1}>
+                    <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
+                    <TextField {...field} fullWidth size="small" type="number"
+                      error={!!errors.currentStock} helperText={editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock'}
+                      inputProps={{ min: 0 }} />
+                  </Box>
+                )} />
+              )}
               <Controller name="minStockThreshold" control={control} render={({ field }) => (
                 <Box flex={1}>
                   <FieldLabel required>Low Stock Alert Threshold</FieldLabel>
                   <TextField {...field} fullWidth size="small" type="number"
-                    helperText="Alert when stock falls to or below this" inputProps={{ min: 0 }} />
+                    error={!!errors.minStockThreshold} helperText={errors.minStockThreshold?.message || 'Alert when stock falls to or below this'} inputProps={{ min: 0 }} />
                 </Box>
               )} />
             </Stack>
+
+            {/* Section: Color Variants */}
+            <Typography variant="overline" color="primary" fontWeight={700} letterSpacing={1.2}>
+              Color Variants
+            </Typography>
+            <Divider sx={{ mb: 2, mt: 0.5 }} />
+
+            <Box mb={3}>
+              <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                Add color variants with individual quantities. Stock is calculated from variant totals.
+              </Typography>
+
+              {/* Existing variant rows */}
+              {variantFields.length > 0 && (
+                <Stack spacing={1} mb={2}>
+                  {variantFields.map((field, index) => (
+                    <Stack key={field.id} direction="row" spacing={1.5} alignItems="flex-start">
+                      <Controller
+                        name={`variants.${index}.color`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <TextField
+                            {...f}
+                            size="small"
+                            placeholder="Color name"
+                            error={!!errors.variants?.[index]?.color}
+                            helperText={errors.variants?.[index]?.color?.message}
+                            sx={{ flex: 2 }}
+                            InputProps={{
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <PaletteIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                                </InputAdornment>
+                              ),
+                            }}
+                          />
+                        )}
+                      />
+                      <Controller
+                        name={`variants.${index}.quantity`}
+                        control={control}
+                        render={({ field: f }) => (
+                          <TextField
+                            {...f}
+                            size="small"
+                            type="number"
+                            placeholder="Qty"
+                            error={!!errors.variants?.[index]?.quantity}
+                            helperText={errors.variants?.[index]?.quantity?.message}
+                            inputProps={{ min: 1 }}
+                            sx={{ flex: 1 }}
+                          />
+                        )}
+                      />
+                      <IconButton size="small" color="error" onClick={() => removeVariant(index)}
+                        sx={{ mt: 0.5 }}>
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Stack>
+                  ))}
+                  {/* Total stock from variants */}
+                  <Box sx={{ p: 1.5, bgcolor: 'primary.50', borderRadius: 1.5, border: 1, borderColor: 'primary.100' }}>
+                    <Typography variant="caption" color="primary.main" fontWeight={700}>
+                      Total Stock: {watchedVariants.reduce((s, v) => s + (Number(v.quantity) || 0), 0)} units across {variantFields.length} color{variantFields.length > 1 ? 's' : ''}
+                    </Typography>
+                  </Box>
+                </Stack>
+              )}
+
+              {/* Add new variant row */}
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <TextField
+                  size="small"
+                  placeholder="e.g. Red, Blue, Black"
+                  value={newVariantColor}
+                  onChange={(e) => setNewVariantColor(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (newVariantColor.trim()) {
+                        appendVariant({ color: newVariantColor.trim(), quantity: 1 });
+                        setNewVariantColor('');
+                      }
+                    }
+                  }}
+                  sx={{ flex: 1 }}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <PaletteIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  disabled={!newVariantColor.trim()}
+                  onClick={() => {
+                    if (newVariantColor.trim()) {
+                      appendVariant({ color: newVariantColor.trim(), quantity: 1 });
+                      setNewVariantColor('');
+                    }
+                  }}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Add Color
+                </Button>
+              </Stack>
+            </Box>
 
             {/* Section: Description */}
             <Typography variant="overline" color="primary" fontWeight={700} letterSpacing={1.2}>

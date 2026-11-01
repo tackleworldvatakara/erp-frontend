@@ -6,6 +6,7 @@ export interface BillItem {
   productId: string;
   productName: string;
   sku: string;
+  variantColor?: string;
   quantity: number;
   unitPrice: number;
   maxUnitPrice: number;
@@ -20,6 +21,7 @@ export interface CreateSaleInput {
   customerPhone?: string;
   items: Array<{
     productId: string;
+    variantColor?: string;
     quantity: number;
     unitPrice: number;
     discount: number;
@@ -34,6 +36,7 @@ export interface SaleItem {
   product: string;
   productName: string;
   sku: string;
+  variantColor?: string;
   quantity: number;
   unit: string;
   unitPrice: number;
