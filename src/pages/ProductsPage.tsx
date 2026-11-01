@@ -9,9 +9,9 @@ import {
   Add as AddIcon, Search as SearchIcon, Edit as EditIcon,
   Delete as DeleteIcon, ToggleOn as ToggleOnIcon, ToggleOff as ToggleOffIcon,
   Inventory2 as InventoryIcon, Close as CloseIcon,
-  Tune as TuneIcon, Palette as PaletteIcon,
+  Tune as TuneIcon,
 } from '@mui/icons-material';
-import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useSnackbar } from 'notistack';
@@ -24,11 +24,6 @@ import { Product } from '../types/product.types';
 
 const UNITS = ['piece', 'pair', 'box', 'kg', 'meter', 'liter', 'set', 'roll'] as const;
 
-const productVariantSchema = z.object({
-  color: z.string().min(1, 'Color name required'),
-  quantity: z.coerce.number().min(1, 'Quantity must be at least 1'),
-});
-
 const productSchema = z.object({
   name:             z.string().min(1, 'Product name is required'),
   sku:              z.string().min(1, 'SKU is required'),
@@ -37,17 +32,11 @@ const productSchema = z.object({
   unit:             z.enum(UNITS),
   purchaseCost:     z.coerce.number().min(1, 'Purchase cost is required'),
   sellingPrice:     z.coerce.number().min(1, 'Selling price is required'),
-  currentStock:     z.coerce.number().min(0).optional(),
+  currentStock:     z.coerce.number().min(1, 'Opening stock is required'),
   minStockThreshold:z.coerce.number().min(1, 'Low stock threshold is required'),
-  variants:         z.array(productVariantSchema).optional().default([]),
+  color:            z.string().optional(),
   description:      z.string().optional(),
-}).refine((data) => {
-  // If no variants, currentStock is required
-  if (!data.variants || data.variants.length === 0) {
-    return data.currentStock !== undefined && data.currentStock >= 1;
-  }
-  return true;
-}, { message: 'Opening stock is required', path: ['currentStock'] });
+});
 
 type ProductFormData = z.infer<typeof productSchema>;
 
@@ -112,6 +101,7 @@ export default function ProductsPage() {
   const [editProduct,    setEditProduct]    = useState<Product | null>(null);
   const [saving,         setSaving]         = useState(false);
   const [deleteTarget,   setDeleteTarget]   = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [categoryOptions,setCategoryOptions]= useState<string[]>([]);
 
   const activeFilterCount = (statusFilter ? 1 : 0) +
@@ -136,12 +126,9 @@ export default function ProductsPage() {
 
   const { control, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
-    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, variants: [] },
+    defaultValues: { unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, color: '' },
   });
-  const { fields: variantFields, append: appendVariant, remove: removeVariant } = useFieldArray({ control, name: 'variants' });
-  const [newVariantColor, setNewVariantColor] = useState('');
   const nameValue = watch('name');
-  const watchedVariants = watch('variants') ?? [];
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   const fetchProducts = useCallback(async () => {
@@ -194,15 +181,13 @@ export default function ProductsPage() {
   // ── Dialog open ───────────────────────────────────────────────────────────────
   function openAdd() {
     setEditProduct(null);
-    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, variants: [], name: '', sku: '', category: '', brand: '', description: '' });
-    setNewVariantColor('');
+    reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, color: '', name: '', sku: '', category: '', brand: '', description: '' });
     setDialogOpen(true);
   }
 
   function openEdit(p: Product) {
     setEditProduct(p);
-    reset({ name: p.name, sku: p.sku, category: p.category ?? '', brand: p.brand ?? '', unit: p.unit, purchaseCost: p.purchaseCost, sellingPrice: p.sellingPrice, currentStock: p.currentStock, minStockThreshold: p.minStockThreshold, variants: p.variants ?? [], description: p.description ?? '' });
-    setNewVariantColor('');
+    reset({ name: p.name, sku: p.sku, category: p.category ?? '', brand: p.brand ?? '', unit: p.unit, purchaseCost: p.purchaseCost, sellingPrice: p.sellingPrice, currentStock: p.currentStock, minStockThreshold: p.minStockThreshold, color: p.color ?? '', description: p.description ?? '' });
     setDialogOpen(true);
   }
 
@@ -214,18 +199,11 @@ export default function ProductsPage() {
   async function onSubmit(data: ProductFormData) {
     setSaving(true);
     try {
-      const payload = {
-        ...data,
-        variants: data.variants ?? [],
-        currentStock: (data.variants && data.variants.length > 0)
-          ? data.variants.reduce((s, v) => s + v.quantity, 0)
-          : (data.currentStock ?? 0),
-      };
       if (editProduct) {
-        await productsApi.updateProduct(editProduct._id, payload);
+        await productsApi.updateProduct(editProduct._id, data);
         enqueueSnackbar('Product updated', { variant: 'success' });
       } else {
-        await productsApi.createProduct(payload);
+        await productsApi.createProduct(data);
         enqueueSnackbar('Product created', { variant: 'success' });
       }
       setDialogOpen(false);
@@ -637,7 +615,7 @@ export default function ProductsPage() {
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: 'primary.main' }}>
-                {['Product', 'SKU', 'Category', 'Unit', 'Cost', 'Price', 'Stock', 'Product Status', ''].map((h) => (
+                {['Product', 'SKU', 'Category', 'Unit', 'Cost', 'Price', 'Stock', 'Product Status'].map((h) => (
                   <TableCell key={h} sx={{ color: 'white', fontWeight: 700, whiteSpace: 'nowrap', py: 1.5, fontSize: 13 }}>
                     {h}
                   </TableCell>
@@ -672,14 +650,21 @@ export default function ProductsPage() {
                   <TableRow
                     key={p._id}
                     hover
+                    onClick={() => setSelectedProduct(p)}
                     sx={{
+                      cursor: 'pointer',
                       bgcolor: i % 2 === 0 ? 'transparent' : (theme.palette.mode === 'light' ? '#fafafa' : '#1a1a1a'),
                       '&:hover': { bgcolor: theme.palette.mode === 'light' ? '#f0f4ff' : '#1e2a3a' },
                     }}
                   >
                     <TableCell sx={{ fontWeight: 600, maxWidth: 200 }}>
                       <Typography variant="body2" fontWeight={600} noWrap>{p.name}</Typography>
-                      {p.brand && <Typography variant="caption" color="text.secondary">{p.brand}</Typography>}
+                      <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                        {p.brand && <Typography variant="caption" color="text.secondary">{p.brand}</Typography>}
+                        {p.color && (
+                          <Typography variant="caption" color="text.secondary">· Color: {p.color}</Typography>
+                        )}
+                      </Stack>
                     </TableCell>
                     <TableCell>
                       <Chip label={p.sku} size="small" variant="outlined" sx={{ fontFamily: 'monospace', fontSize: 11 }} />
@@ -709,38 +694,6 @@ export default function ProductsPage() {
                         color={p.status === 'active' ? 'success' : 'default'}
                         sx={{ fontWeight: 600, minWidth: 78 }}
                       />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => openEdit(p)}
-                            sx={{ '&:hover': { bgcolor: 'primary.light', color: 'primary.main' } }}>
-                            <EditIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title={p.status === 'active' ? 'Deactivate' : 'Activate'}>
-                          <IconButton size="small" onClick={() => handleToggleStatus(p)}
-                            sx={{
-                              color: p.status === 'active' ? 'success.main' : 'warning.main',
-                              '&:hover': {
-                                bgcolor: 'action.hover',
-                                color: p.status === 'active' ? 'success.dark' : 'warning.dark',
-                              },
-                            }}>
-                            {p.status === 'active'
-                              ? <ToggleOffIcon sx={{ fontSize: 20 }} />
-                              : <ToggleOnIcon sx={{ fontSize: 20 }} />}
-                          </IconButton>
-                        </Tooltip>
-                        {!p.hasSalesHistory && (
-                          <Tooltip title="Delete">
-                            <IconButton size="small" onClick={() => setDeleteTarget(p)}
-                              sx={{ '&:hover': { bgcolor: 'error.light', color: 'error.main' } }}>
-                              <DeleteIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))
@@ -886,17 +839,14 @@ export default function ProductsPage() {
             <Divider sx={{ mb: 2, mt: 0.5 }} />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
-              {/* Only show Opening Stock if no variants defined */}
-              {watchedVariants.length === 0 && (
-                <Controller name="currentStock" control={control} render={({ field }) => (
-                  <Box flex={1}>
-                    <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
-                    <TextField {...field} fullWidth size="small" type="number"
-                      error={!!errors.currentStock} helperText={editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock'}
-                      inputProps={{ min: 0 }} />
-                  </Box>
-                )} />
-              )}
+              <Controller name="currentStock" control={control} render={({ field }) => (
+                <Box flex={1}>
+                  <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
+                  <TextField {...field} fullWidth size="small" type="number"
+                    error={!!errors.currentStock} helperText={errors.currentStock?.message || (editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock')}
+                    inputProps={{ min: 0 }} />
+                </Box>
+              )} />
               <Controller name="minStockThreshold" control={control} render={({ field }) => (
                 <Box flex={1}>
                   <FieldLabel required>Low Stock Alert Threshold</FieldLabel>
@@ -906,116 +856,22 @@ export default function ProductsPage() {
               )} />
             </Stack>
 
-            {/* Section: Color Variants */}
+            {/* Section: Color */}
             <Typography variant="overline" color="primary" fontWeight={700} letterSpacing={1.2}>
-              Color Variants
+              Color (Optional)
             </Typography>
             <Divider sx={{ mb: 2, mt: 0.5 }} />
 
-            <Box mb={3}>
-              <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
-                Add color variants with individual quantities. Stock is calculated from variant totals.
-              </Typography>
-
-              {/* Existing variant rows */}
-              {variantFields.length > 0 && (
-                <Stack spacing={1} mb={2}>
-                  {variantFields.map((field, index) => (
-                    <Stack key={field.id} direction="row" spacing={1.5} alignItems="flex-start">
-                      <Controller
-                        name={`variants.${index}.color`}
-                        control={control}
-                        render={({ field: f }) => (
-                          <TextField
-                            {...f}
-                            size="small"
-                            placeholder="Color name"
-                            error={!!errors.variants?.[index]?.color}
-                            helperText={errors.variants?.[index]?.color?.message}
-                            sx={{ flex: 2 }}
-                            InputProps={{
-                              startAdornment: (
-                                <InputAdornment position="start">
-                                  <PaletteIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                                </InputAdornment>
-                              ),
-                            }}
-                          />
-                        )}
-                      />
-                      <Controller
-                        name={`variants.${index}.quantity`}
-                        control={control}
-                        render={({ field: f }) => (
-                          <TextField
-                            {...f}
-                            size="small"
-                            type="number"
-                            placeholder="Qty"
-                            error={!!errors.variants?.[index]?.quantity}
-                            helperText={errors.variants?.[index]?.quantity?.message}
-                            inputProps={{ min: 1 }}
-                            sx={{ flex: 1 }}
-                          />
-                        )}
-                      />
-                      <IconButton size="small" color="error" onClick={() => removeVariant(index)}
-                        sx={{ mt: 0.5 }}>
-                        <DeleteIcon sx={{ fontSize: 18 }} />
-                      </IconButton>
-                    </Stack>
-                  ))}
-                  {/* Total stock from variants */}
-                  <Box sx={{ p: 1.5, bgcolor: 'primary.50', borderRadius: 1.5, border: 1, borderColor: 'primary.100' }}>
-                    <Typography variant="caption" color="primary.main" fontWeight={700}>
-                      Total Stock: {watchedVariants.reduce((s, v) => s + (Number(v.quantity) || 0), 0)} units across {variantFields.length} color{variantFields.length > 1 ? 's' : ''}
-                    </Typography>
-                  </Box>
-                </Stack>
-              )}
-
-              {/* Add new variant row */}
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <TextField
-                  size="small"
-                  placeholder="e.g. Red, Blue, Black"
-                  value={newVariantColor}
-                  onChange={(e) => setNewVariantColor(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      if (newVariantColor.trim()) {
-                        appendVariant({ color: newVariantColor.trim(), quantity: 1 });
-                        setNewVariantColor('');
-                      }
-                    }
-                  }}
-                  sx={{ flex: 1 }}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <PaletteIcon sx={{ fontSize: 16, color: 'text.disabled' }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                />
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  disabled={!newVariantColor.trim()}
-                  onClick={() => {
-                    if (newVariantColor.trim()) {
-                      appendVariant({ color: newVariantColor.trim(), quantity: 1 });
-                      setNewVariantColor('');
-                    }
-                  }}
-                  sx={{ whiteSpace: 'nowrap' }}
-                >
-                  Add Color
-                </Button>
-              </Stack>
-            </Box>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
+              <Controller name="color" control={control} render={({ field }) => (
+                <Box flex={1}>
+                  <FieldLabel>Color</FieldLabel>
+                  <TextField {...field} fullWidth size="small" placeholder="e.g. Red, Blue, Black"
+                    helperText="Optional — shown as a label on the product" />
+                </Box>
+              )} />
+              <Box flex={1} />
+            </Stack>
 
             {/* Section: Description */}
             <Typography variant="overline" color="primary" fontWeight={700} letterSpacing={1.2}>
@@ -1043,6 +899,142 @@ export default function ProductsPage() {
             </Button>
           </Stack>
         </Box>
+      </Dialog>
+
+      {/* Product Details Dialog */}
+      <Dialog
+        open={!!selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        {selectedProduct && (
+          <>
+            {/* Header */}
+            <Box sx={{ px: 3, pt: 3, pb: 2, background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`, color: 'white' }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>{selectedProduct.name}</Typography>
+                  <Stack direction="row" spacing={1} alignItems="center" mt={0.5}>
+                    <Chip label={selectedProduct.sku} size="small" sx={{ fontFamily: 'monospace', fontSize: 11, bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }} />
+                    <Chip
+                      label={selectedProduct.status === 'active' ? 'Active' : 'Inactive'}
+                      size="small"
+                      sx={{ fontWeight: 700, bgcolor: selectedProduct.status === 'active' ? 'success.main' : 'grey.500', color: 'white' }}
+                    />
+                  </Stack>
+                </Box>
+                <IconButton onClick={() => setSelectedProduct(null)} sx={{ color: 'white' }}>
+                  <CloseIcon />
+                </IconButton>
+              </Stack>
+            </Box>
+
+            <DialogContent sx={{ p: 3 }}>
+              <Stack spacing={2}>
+                {/* Basic info grid */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  {[
+                    { label: 'Category', value: selectedProduct.category || '—' },
+                    { label: 'Brand', value: selectedProduct.brand || '—' },
+                    { label: 'Unit', value: selectedProduct.unit },
+                    { label: 'Color', value: selectedProduct.color || '—' },
+                  ].map(({ label, value }) => (
+                    <Box key={label}>
+                      <Typography variant="caption" color="text.secondary" fontWeight={600}>{label}</Typography>
+                      <Typography variant="body2" fontWeight={500} sx={{ textTransform: label === 'Unit' ? 'capitalize' : 'none' }}>{value}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+
+                <Divider />
+
+                {/* Pricing */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+                  <Box sx={{ p: 1.5, bgcolor: 'grey.50', borderRadius: 2, border: 1, borderColor: 'divider' }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>Purchase Cost</Typography>
+                    <Typography variant="h6" fontWeight={700} color="text.primary">{fmtCurrency(selectedProduct.purchaseCost)}</Typography>
+                  </Box>
+                  <Box sx={{ p: 1.5, bgcolor: 'primary.50', borderRadius: 2, border: 1, borderColor: 'primary.100' }}>
+                    <Typography variant="caption" color="primary.main" fontWeight={600}>Selling Price</Typography>
+                    <Typography variant="h6" fontWeight={700} color="primary.main">{fmtCurrency(selectedProduct.sellingPrice)}</Typography>
+                  </Box>
+                </Box>
+
+                {/* Stock */}
+                <Box sx={{
+                  p: 2, borderRadius: 2, border: 1,
+                  borderColor: selectedProduct.currentStock <= 0 ? 'error.light' : selectedProduct.currentStock <= selectedProduct.minStockThreshold ? 'warning.light' : 'success.light',
+                  bgcolor: selectedProduct.currentStock <= 0 ? 'error.50' : selectedProduct.currentStock <= selectedProduct.minStockThreshold ? 'warning.50' : 'success.50',
+                }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box>
+                      <Typography variant="caption" fontWeight={600}
+                        color={selectedProduct.currentStock <= 0 ? 'error.main' : selectedProduct.currentStock <= selectedProduct.minStockThreshold ? 'warning.main' : 'success.main'}>
+                        Current Stock
+                      </Typography>
+                      <Typography variant="h5" fontWeight={800}
+                        color={selectedProduct.currentStock <= 0 ? 'error.main' : selectedProduct.currentStock <= selectedProduct.minStockThreshold ? 'warning.main' : 'success.main'}>
+                        {selectedProduct.currentStock} {selectedProduct.unit}s
+                      </Typography>
+                    </Box>
+                    <Box textAlign="right">
+                      <Typography variant="caption" color="text.secondary" fontWeight={600}>Low Stock Alert</Typography>
+                      <Typography variant="body2" fontWeight={600}>≤ {selectedProduct.minStockThreshold}</Typography>
+                    </Box>
+                  </Stack>
+                </Box>
+
+                {selectedProduct.description && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" fontWeight={600}>Description</Typography>
+                    <Typography variant="body2" mt={0.5}>{selectedProduct.description}</Typography>
+                  </Box>
+                )}
+              </Stack>
+            </DialogContent>
+
+            {/* Actions */}
+            <Box sx={{ px: 3, py: 2, borderTop: 1, borderColor: 'divider', bgcolor: 'grey.50' }}>
+              <Stack direction="row" spacing={1.5} justifyContent="space-between" alignItems="center">
+                {/* Delete — only if no sales history */}
+                <Box>
+                  {!selectedProduct.hasSalesHistory && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      size="small"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => { setDeleteTarget(selectedProduct); setSelectedProduct(null); }}
+                    >
+                      Delete
+                    </Button>
+                  )}
+                </Box>
+                <Stack direction="row" spacing={1.5}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={selectedProduct.status === 'active' ? <ToggleOffIcon /> : <ToggleOnIcon />}
+                    color={selectedProduct.status === 'active' ? 'warning' : 'success'}
+                    onClick={() => { handleToggleStatus(selectedProduct); setSelectedProduct(null); }}
+                  >
+                    {selectedProduct.status === 'active' ? 'Deactivate' : 'Activate'}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<EditIcon />}
+                    onClick={() => { setSelectedProduct(null); openEdit(selectedProduct); }}
+                  >
+                    Edit Product
+                  </Button>
+                </Stack>
+              </Stack>
+            </Box>
+          </>
+        )}
       </Dialog>
 
       {/* Delete Confirm */}

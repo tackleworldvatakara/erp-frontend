@@ -1,11 +1,6 @@
 export type ProductUnit = 'piece' | 'pair' | 'box' | 'kg' | 'meter' | 'liter' | 'set' | 'roll';
 export type ProductStatus = 'active' | 'inactive' | 'archived';
 
-export interface ProductVariant {
-  color: string;
-  quantity: number;
-}
-
 export interface Product {
   _id: string;
   name: string;
@@ -17,7 +12,7 @@ export interface Product {
   sellingPrice: number;
   currentStock: number;
   minStockThreshold: number;
-  variants: ProductVariant[];
+  color?: string;
   status: ProductStatus;
   hasSalesHistory?: boolean;
   description?: string;
@@ -34,7 +29,7 @@ export interface ProductSearchResult {
   currentStock: number;
   unit: ProductUnit;
   brand?: string;
-  variants: ProductVariant[];
+  color?: string;
 }
 
 export interface CreateProductInput {
@@ -47,7 +42,7 @@ export interface CreateProductInput {
   sellingPrice: number;
   currentStock: number;
   minStockThreshold: number;
-  variants?: ProductVariant[];
+  color?: string;
   description?: string;
 }
 

@@ -3,13 +3,12 @@ import {
   Box, Grid, Paper, Typography, TextField, InputAdornment,
   Button, Stack, IconButton, MenuItem, Divider, Tooltip,
   Autocomplete, CircularProgress, Chip, alpha,
-  Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import {
   Search as SearchIcon, Delete as DeleteIcon,
   PointOfSale as POSIcon, Add as AddIcon, Remove as RemoveIcon,
   Person as PersonIcon, Phone as PhoneIcon, ShoppingCart as CartIcon,
-  CheckCircle as CheckIcon, Palette as PaletteIcon,
+  CheckCircle as CheckIcon,
 } from '@mui/icons-material';
 import { useTheme } from '@mui/material/styles';
 import { useSnackbar } from 'notistack';
@@ -18,7 +17,7 @@ import PrintInvoice from '../components/billing/PrintInvoice';
 import SaleDetailDialog from '../components/billing/SaleDetailDialog';
 import { productsApi } from '../api/products';
 import { salesApi } from '../api/sales';
-import { ProductSearchResult, ProductVariant } from '../types/product.types';
+import { ProductSearchResult } from '../types/product.types';
 import { BillItem, Sale, PaymentMethod } from '../types/sale.types';
 
 const fmt = (n: number) =>
@@ -52,10 +51,6 @@ export default function SalesPage() {
   const [printSale,      setPrintSale]      = useState<Sale | null>(null);
   const [showBill,       setShowBill]       = useState(false);
 
-  // ── Variant picker ─────────────────────────────────────────────────────────
-  const [variantPickerProduct, setVariantPickerProduct] = useState<ProductSearchResult | null>(null);
-  const [selectedVariantColor, setSelectedVariantColor] = useState<string>('');
-
   // ── Search ─────────────────────────────────────────────────────────────────
   const handleSearchChange = useCallback((value: string) => {
     setSearchInput(value);
@@ -70,50 +65,26 @@ export default function SalesPage() {
   }, []);
 
   // ── Cart logic ─────────────────────────────────────────────────────────────
-  function addToCart(product: ProductSearchResult, variantColor?: string) {
-    // If product has variants and no color selected yet, open picker
-    if (product.variants && product.variants.length > 0 && !variantColor) {
-      setVariantPickerProduct(product);
-      setSelectedVariantColor(product.variants[0]?.color ?? '');
-      return;
-    }
-
-    // Determine available stock
-    let availableStock = product.currentStock;
-    if (variantColor && product.variants?.length) {
-      const variant = product.variants.find((v: ProductVariant) => v.color === variantColor);
-      availableStock = variant?.quantity ?? 0;
-    }
-
-    if (availableStock <= 0) {
-      enqueueSnackbar(`"${product.name}"${variantColor ? ` (${variantColor})` : ''} is out of stock`, { variant: 'warning' });
-      return;
-    }
-
-    // Cart key = productId + optional color
-    const cartKey = variantColor ? `${product._id}__${variantColor}` : product._id;
-    const existing = cartItems.find((i) => i.productId === cartKey);
-
+  function addToCart(product: ProductSearchResult) {
+    if (product.currentStock <= 0) { enqueueSnackbar(`"${product.name}" is out of stock`, { variant: 'warning' }); return; }
+    const existing = cartItems.find((i) => i.productId === product._id);
     if (existing) {
-      if (existing.quantity >= availableStock) {
-        enqueueSnackbar(`Only ${availableStock} units available`, { variant: 'warning' });
-        return;
-      }
-      setCartItems((prev) => prev.map((i) => i.productId === cartKey
+      if (existing.quantity >= product.currentStock) { enqueueSnackbar(`Only ${product.currentStock} units available`, { variant: 'warning' }); return; }
+      setCartItems((prev) => prev.map((i) => i.productId === product._id
         ? { ...i, quantity: i.quantity + 1, lineTotal: calc(i.quantity + 1, i.unitPrice, i.discountAmount) } : i));
     } else {
       setCartItems((prev) => [...prev, {
-        productId: cartKey,
+        productId: product._id,
         productName: product.name,
         sku: product.sku,
-        variantColor,
+        color: product.color,
         quantity: 1,
         unitPrice: product.sellingPrice,
         maxUnitPrice: product.sellingPrice,
         discountAmount: 0,
         lineTotal: product.sellingPrice,
         unit: product.unit,
-        currentStock: availableStock,
+        currentStock: product.currentStock,
       }]);
     }
     setSearchInput(''); setSearchResults([]);
@@ -176,8 +147,7 @@ export default function SalesPage() {
         customerName: customerName.trim() || 'Walk-in Customer',
         customerPhone: customerPhone.trim() || undefined,
         items: cartItems.map((i) => ({
-          productId: i.productId.includes('__') ? i.productId.split('__')[0] : i.productId,
-          variantColor: i.variantColor,
+          productId: i.productId,
           quantity: i.quantity,
           unitPrice: i.unitPrice,
           discount: i.discountAmount > 0 ? parseFloat(((i.discountAmount / (i.quantity * i.unitPrice)) * 100).toFixed(4)) : 0,
@@ -224,6 +194,7 @@ export default function SalesPage() {
                         <Stack direction="row" spacing={1} alignItems="center">
                           <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{o.sku}</Typography>
                           {o.brand && <Typography variant="caption" color="text.secondary">· {o.brand}</Typography>}
+                          {o.color && <Typography variant="caption" color="text.secondary">· Color: {o.color}</Typography>}
                           <Chip label={o.currentStock <= 0 ? 'Out of Stock' : `Stock: ${o.currentStock}`}
                             size="small" color={o.currentStock <= 0 ? 'error' : 'success'}
                             sx={{ height: 18, fontSize: 10, fontWeight: 600 }} />
@@ -296,13 +267,8 @@ export default function SalesPage() {
                               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{item.sku}</Typography>
                               <Typography variant="caption" color="text.disabled">·</Typography>
                               <Typography variant="caption" color="text.secondary">{item.unit}</Typography>
-                              {item.variantColor && (
-                                <Chip
-                                  label={item.variantColor}
-                                  size="small"
-                                  icon={<PaletteIcon style={{ fontSize: 10 }} />}
-                                  sx={{ height: 16, fontSize: 9, fontWeight: 600 }}
-                                />
+                              {item.color && (
+                                <Typography variant="caption" color="text.secondary">· Color: {item.color}</Typography>
                               )}
                               <Chip label={`${item.currentStock} left`} size="small"
                                 color={item.currentStock <= item.quantity ? 'warning' : 'default'}
@@ -559,75 +525,6 @@ export default function SalesPage() {
         sale={printSale}
         onClose={() => setShowBill(false)}
       />
-
-      {/* ── Color Variant Picker Dialog ─────────────────────────────────── */}
-      <Dialog
-        open={!!variantPickerProduct}
-        onClose={() => setVariantPickerProduct(null)}
-        maxWidth="xs"
-        fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <PaletteIcon color="primary" />
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>Select Color</Typography>
-              <Typography variant="caption" color="text.secondary">{variantPickerProduct?.name}</Typography>
-            </Box>
-          </Stack>
-        </DialogTitle>
-        <DialogContent>
-          <Stack spacing={1} mt={1}>
-            {variantPickerProduct?.variants?.map((v: ProductVariant) => (
-              <Box
-                key={v.color}
-                onClick={() => v.quantity > 0 && setSelectedVariantColor(v.color)}
-                sx={{
-                  p: 1.5,
-                  borderRadius: 2,
-                  border: 2,
-                  borderColor: selectedVariantColor === v.color ? 'primary.main' : 'divider',
-                  bgcolor: selectedVariantColor === v.color ? 'primary.50' : 'transparent',
-                  cursor: v.quantity > 0 ? 'pointer' : 'not-allowed',
-                  opacity: v.quantity <= 0 ? 0.45 : 1,
-                  transition: 'all 0.15s',
-                  '&:hover': v.quantity > 0 ? { borderColor: 'primary.main', bgcolor: 'primary.50' } : {},
-                }}
-              >
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <PaletteIcon sx={{ fontSize: 18, color: selectedVariantColor === v.color ? 'primary.main' : 'text.secondary' }} />
-                    <Typography variant="body2" fontWeight={600}>{v.color}</Typography>
-                    {v.quantity <= 0 && <Chip label="Out of Stock" size="small" color="error" sx={{ height: 18, fontSize: 10 }} />}
-                  </Stack>
-                  <Chip
-                    label={`${v.quantity} left`}
-                    size="small"
-                    color={v.quantity <= 0 ? 'error' : v.quantity <= 5 ? 'warning' : 'success'}
-                    sx={{ height: 20, fontSize: 11, fontWeight: 600 }}
-                  />
-                </Stack>
-              </Box>
-            ))}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2.5 }}>
-          <Button variant="outlined" onClick={() => setVariantPickerProduct(null)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={!selectedVariantColor}
-            onClick={() => {
-              if (variantPickerProduct && selectedVariantColor) {
-                addToCart(variantPickerProduct, selectedVariantColor);
-                setVariantPickerProduct(null);
-              }
-            }}
-          >
-            Add to Cart
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }
