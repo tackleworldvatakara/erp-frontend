@@ -32,13 +32,15 @@ const productSchema = z.object({
   unit:             z.enum(UNITS),
   purchaseCost:     z.coerce.number().min(1, 'Purchase cost is required'),
   sellingPrice:     z.coerce.number().min(1, 'Selling price is required'),
-  currentStock:     z.coerce.number().min(1, 'Opening stock is required'),
+  currentStock:     z.coerce.number().min(0).optional(),
   minStockThreshold:z.coerce.number().min(1, 'Low stock threshold is required'),
   color:            z.string().optional(),
   description:      z.string().optional(),
 });
 
 type ProductFormData = z.infer<typeof productSchema>;
+
+interface ColorRow { color: string; stock: number; sku: string; }
 
 function generateSKU(name: string) {
   const p = name.replace(/[^a-zA-Z]/g, '').substring(0, 3).toUpperCase() || 'PRD';
@@ -103,6 +105,7 @@ export default function ProductsPage() {
   const [deleteTarget,   setDeleteTarget]   = useState<Product | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [categoryOptions,setCategoryOptions]= useState<string[]>([]);
+  const [colorRows,      setColorRows]      = useState<ColorRow[]>([]);
 
   const activeFilterCount = (statusFilter ? 1 : 0) +
     (categoryFilter ? 1 : 0) +
@@ -182,12 +185,14 @@ export default function ProductsPage() {
   function openAdd() {
     setEditProduct(null);
     reset({ unit: 'piece', purchaseCost: undefined, sellingPrice: undefined, currentStock: undefined, minStockThreshold: 10, color: '', name: '', sku: '', category: '', brand: '', description: '' });
+    setColorRows([]);
     setDialogOpen(true);
   }
 
   function openEdit(p: Product) {
     setEditProduct(p);
     reset({ name: p.name, sku: p.sku, category: p.category ?? '', brand: p.brand ?? '', unit: p.unit, purchaseCost: p.purchaseCost, sellingPrice: p.sellingPrice, currentStock: p.currentStock, minStockThreshold: p.minStockThreshold, color: p.color ?? '', description: p.description ?? '' });
+    setColorRows([]);
     setDialogOpen(true);
   }
 
@@ -200,10 +205,25 @@ export default function ProductsPage() {
     setSaving(true);
     try {
       if (editProduct) {
+        // Edit: single product update
         await productsApi.updateProduct(editProduct._id, data);
         enqueueSnackbar('Product updated', { variant: 'success' });
+      } else if (colorRows.length > 0) {
+        // Add: create one product per color row
+        await Promise.all(
+          colorRows.map((row) =>
+            productsApi.createProduct({
+              ...data,
+              currentStock: row.stock,
+              color: row.color,
+              sku: row.sku,
+            })
+          )
+        );
+        enqueueSnackbar(`${colorRows.length} product${colorRows.length > 1 ? 's' : ''} created`, { variant: 'success' });
       } else {
-        await productsApi.createProduct(data);
+        // Add: single product (no colors)
+        await productsApi.createProduct({ ...data, currentStock: data.currentStock ?? 0 });
         enqueueSnackbar('Product created', { variant: 'success' });
       }
       setDialogOpen(false);
@@ -752,14 +772,17 @@ export default function ProductsPage() {
               )} />
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <Controller name="sku" control={control} render={({ field }) => (
-                  <Box flex={1}>
-                    <FieldLabel required>SKU / Product Code</FieldLabel>
-                    <TextField {...field} fullWidth size="small" placeholder="Auto-generated if blank"
-                      error={!!errors.sku} helperText={errors.sku?.message || 'Unique identifier for this product'}
-                      InputProps={{ sx: { fontFamily: 'monospace' } }} />
-                  </Box>
-                )} />
+                {/* Hide SKU in add mode when color rows exist — each row has its own SKU */}
+                {(!colorRows.length || editProduct) && (
+                  <Controller name="sku" control={control} render={({ field }) => (
+                    <Box flex={1}>
+                      <FieldLabel required>SKU / Product Code</FieldLabel>
+                      <TextField {...field} fullWidth size="small" placeholder="Auto-generated if blank"
+                        error={!!errors.sku} helperText={errors.sku?.message || 'Unique identifier for this product'}
+                        InputProps={{ sx: { fontFamily: 'monospace' } }} />
+                    </Box>
+                  )} />
+                )}
                 <Controller name="unit" control={control} render={({ field }) => (
                   <Box flex={1}>
                     <FieldLabel required>Unit of Measure</FieldLabel>
@@ -839,14 +862,24 @@ export default function ProductsPage() {
             <Divider sx={{ mb: 2, mt: 0.5 }} />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
-              <Controller name="currentStock" control={control} render={({ field }) => (
-                <Box flex={1}>
-                  <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
-                  <TextField {...field} fullWidth size="small" type="number"
-                    error={!!errors.currentStock} helperText={errors.currentStock?.message || (editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock')}
-                    inputProps={{ min: 0 }} />
+              {/* Hide opening stock in add mode when colors are defined (stock per color row) */}
+              {(!colorRows.length || editProduct) && (
+                <Controller name="currentStock" control={control} render={({ field }) => (
+                  <Box flex={1}>
+                    <FieldLabel required>{editProduct ? 'Current Stock' : 'Opening Stock'}</FieldLabel>
+                    <TextField {...field} fullWidth size="small" type="number"
+                      error={!!errors.currentStock} helperText={errors.currentStock?.message || (editProduct ? 'Changing this creates a stock adjustment record' : 'Initial quantity in stock')}
+                      inputProps={{ min: 0 }} />
+                  </Box>
+                )} />
+              )}
+              {colorRows.length > 0 && !editProduct && (
+                <Box flex={1} sx={{ p: 1.5, bgcolor: 'info.50', borderRadius: 2, border: 1, borderColor: 'info.200', display: 'flex', alignItems: 'center' }}>
+                  <Typography variant="caption" color="info.main" fontWeight={600}>
+                    Stock is set per color below
+                  </Typography>
                 </Box>
-              )} />
+              )}
               <Controller name="minStockThreshold" control={control} render={({ field }) => (
                 <Box flex={1}>
                   <FieldLabel required>Low Stock Alert Threshold</FieldLabel>
@@ -862,16 +895,87 @@ export default function ProductsPage() {
             </Typography>
             <Divider sx={{ mb: 2, mt: 0.5 }} />
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
-              <Controller name="color" control={control} render={({ field }) => (
-                <Box flex={1}>
-                  <FieldLabel>Color</FieldLabel>
-                  <TextField {...field} fullWidth size="small" placeholder="e.g. Red, Blue, Black"
-                    helperText="Optional — shown as a label on the product" />
-                </Box>
-              )} />
-              <Box flex={1} />
-            </Stack>
+            {!editProduct ? (
+              // ADD MODE: multi-color rows
+              <Box mb={3}>
+                <Typography variant="caption" color="text.secondary" display="block" mb={1.5}>
+                  Add multiple colors — each color creates a separate product with its own stock.
+                </Typography>
+
+                {colorRows.length > 0 && (
+                  <Stack spacing={1} mb={2}>
+                    {/* Header */}
+                    <Stack direction="row" spacing={1.5} px={0.5}>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ flex: 2 }}>Color</Typography>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ flex: 1 }}>Stock</Typography>
+                      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ flex: 2 }}>SKU</Typography>
+                      <Box sx={{ width: 32 }} />
+                    </Stack>
+                    {colorRows.map((row, i) => (
+                      <Stack key={i} direction="row" spacing={1.5} alignItems="center">
+                        <TextField
+                          size="small"
+                          placeholder="e.g. Red"
+                          value={row.color}
+                          onChange={(e) => setColorRows((prev) => prev.map((r, idx) => idx === i ? { ...r, color: e.target.value } : r))}
+                          sx={{ flex: 2 }}
+                        />
+                        <TextField
+                          size="small"
+                          type="number"
+                          placeholder="Qty"
+                          value={row.stock || ''}
+                          onChange={(e) => setColorRows((prev) => prev.map((r, idx) => idx === i ? { ...r, stock: parseInt(e.target.value) || 0 } : r))}
+                          inputProps={{ min: 1 }}
+                          sx={{ flex: 1 }}
+                        />
+                        <TextField
+                          size="small"
+                          placeholder="SKU"
+                          value={row.sku}
+                          onChange={(e) => setColorRows((prev) => prev.map((r, idx) => idx === i ? { ...r, sku: e.target.value.toUpperCase() } : r))}
+                          inputProps={{ style: { fontFamily: 'monospace', textTransform: 'uppercase' } }}
+                          sx={{ flex: 2 }}
+                        />
+                        <IconButton size="small" color="error" onClick={() => setColorRows((prev) => prev.filter((_, idx) => idx !== i))}>
+                          <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Stack>
+                    ))}
+                  </Stack>
+                )}
+
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => {
+                    const name = watch('name') || '';
+                    setColorRows((prev) => [...prev, { color: '', stock: 0, sku: generateSKU(name) }]);
+                  }}
+                >
+                  Add Color
+                </Button>
+
+                {colorRows.length === 0 && (
+                  <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                    No colors added — product will be created without a color.
+                  </Typography>
+                )}
+              </Box>
+            ) : (
+              // EDIT MODE: single color field
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mb={3}>
+                <Controller name="color" control={control} render={({ field }) => (
+                  <Box flex={1}>
+                    <FieldLabel>Color</FieldLabel>
+                    <TextField {...field} fullWidth size="small" placeholder="e.g. Red"
+                      helperText="Single color label for this product" />
+                  </Box>
+                )} />
+                <Box flex={1} />
+              </Stack>
+            )}
 
             {/* Section: Description */}
             <Typography variant="overline" color="primary" fontWeight={700} letterSpacing={1.2}>
@@ -895,7 +999,7 @@ export default function ProductsPage() {
             <Button variant="contained" onClick={handleSubmit(onSubmit)} disabled={saving}
               sx={{ minWidth: 140 }}
               startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}>
-              {saving ? 'Saving…' : editProduct ? 'Save Changes' : 'Add Product'}
+              {saving ? 'Saving…' : editProduct ? 'Save Changes' : colorRows.length > 0 ? `Add ${colorRows.length} Product${colorRows.length > 1 ? 's' : ''}` : 'Add Product'}
             </Button>
           </Stack>
         </Box>
