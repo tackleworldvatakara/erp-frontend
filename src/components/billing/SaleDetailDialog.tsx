@@ -12,11 +12,13 @@ import {
   ReceiptLong as ReceiptIcon,
   Replay as ReturnHistoryIcon,
   ReceiptOutlined as AdjustedBillIcon,
+  Edit as EditIcon,
 } from '@mui/icons-material';
 import { Sale, SaleItem } from '../../types/sale.types';
 import { CustomerReturn } from '../../types/return.types';
 import { returnsApi } from '../../api/returns';
 import PrintInvoice from './PrintInvoice';
+import EditSaleDialog from './EditSaleDialog';
 
 interface SaleDetailDialogProps {
   open: boolean;
@@ -25,6 +27,7 @@ interface SaleDetailDialogProps {
   onReturn?: () => void;
   onCancel?: () => void;
   onShowBill?: () => void;
+  onEdit?: (updated: Sale) => void;
 }
 
 const fmt = (n: number) =>
@@ -71,32 +74,42 @@ function ReturnStatusChip({ status }: { status: CustomerReturn['status'] }) {
 
 export default function SaleDetailDialog({
   open,
-  sale,
+  sale: saleProp,
   onClose,
   onReturn,
   onCancel,
   onShowBill,
+  onEdit,
 }: SaleDetailDialogProps) {
   const [returns, setReturns] = useState<CustomerReturn[]>([]);
   const [returnsLoading, setReturnsLoading] = useState(false);
   const [showAdjustedBill, setShowAdjustedBill] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [currentSale, setCurrentSale] = useState<Sale | null>(saleProp);
+
+  // Sync currentSale with prop
+  useEffect(() => {
+    setCurrentSale(saleProp);
+  }, [saleProp]);
 
   // Fetch returns whenever the dialog opens for a sale
   useEffect(() => {
-    if (!open || !sale) {
+    if (!open || !currentSale) {
       setReturns([]);
       return;
     }
     setReturnsLoading(true);
     returnsApi
-      .getReturns({ search: sale.invoiceNumber, pageSize: 50 })
+      .getReturns({ search: currentSale.invoiceNumber, pageSize: 50 })
       .then((res) => setReturns(res.data))
       .catch(() => setReturns([]))
       .finally(() => setReturnsLoading(false));
-  }, [open, sale?._id]);
+  }, [open, currentSale?._id]);
 
-  if (!sale) return null;
+  if (!currentSale) return null;
 
+  // Use `sale` as the working variable so the rest of the JSX is unchanged
+  const sale = currentSale;
   const isConfirmed = sale.status === 'confirmed';
 
   // ── Build adjusted sale (returned items removed / qty reduced) ────────────
@@ -208,6 +221,20 @@ export default function SaleDetailDialog({
               <Button startIcon={<ReturnIcon />} variant="outlined" size="small" onClick={onReturn}
                 sx={{ borderRadius: 2, fontWeight: 600 }}>
                 Return Items
+              </Button>
+            </Tooltip>
+          )}
+          {isConfirmed && (
+            <Tooltip title="Edit this bill">
+              <Button
+                startIcon={<EditIcon />}
+                variant="outlined"
+                color="primary"
+                size="small"
+                onClick={() => setShowEditDialog(true)}
+                sx={{ borderRadius: 2, fontWeight: 600 }}
+              >
+                Edit Bill
               </Button>
             </Tooltip>
           )}
@@ -516,6 +543,18 @@ export default function SaleDetailDialog({
       open={showAdjustedBill}
       sale={adjustedSale}
       onClose={() => setShowAdjustedBill(false)}
+    />
+
+    {/* ── Edit Sale dialog ─────────────────────────────────────────────── */}
+    <EditSaleDialog
+      open={showEditDialog}
+      sale={currentSale}
+      onClose={() => setShowEditDialog(false)}
+      onSaved={(updated) => {
+        setCurrentSale(updated);
+        setShowEditDialog(false);
+        if (onEdit) onEdit(updated);
+      }}
     />
   </>
   );

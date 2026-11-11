@@ -1,5 +1,5 @@
 import apiClient from './client';
-import { Sale, CreateSaleInput, DashboardStats } from '../types/sale.types';
+import { Sale, CreateSaleInput, UpdateSaleInput, DashboardStats } from '../types/sale.types';
 
 interface PaginatedSales {
   data: Sale[];
@@ -30,6 +30,11 @@ export const salesApi = {
 
   cancelSale: async (id: string, reason: string): Promise<Sale> => {
     const res = await apiClient.post(`/sales/${id}/cancel`, { reason });
+    return res.data.data;
+  },
+
+  updateSale: async (id: string, data: UpdateSaleInput): Promise<Sale> => {
+    const res = await apiClient.put(`/sales/${id}`, data);
     return res.data.data;
   },
 

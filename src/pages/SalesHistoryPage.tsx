@@ -348,6 +348,10 @@ export default function SalesHistoryPage() {
           navigate(`/returns?invoiceId=${inv}`);
         }}
         onCancel={() => setCancelConfirmOpen(true)}
+        onEdit={(updated) => {
+          setViewSale(updated);
+          fetchSales();
+        }}
       />
 
       <PrintInvoice

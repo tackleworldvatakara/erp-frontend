@@ -31,6 +31,21 @@ export interface CreateSaleInput {
   notes?: string;
 }
 
+export interface UpdateSaleInput {
+  customerName?: string;
+  customerPhone?: string;
+  items?: Array<{
+    productId: string;
+    quantity: number;
+    unitPrice: number;
+    discount: number;
+  }>;
+  commonDiscount?: number;
+  paymentMethod?: PaymentMethod;
+  amountPaid?: number;
+  notes?: string;
+}
+
 export interface SaleItem {
   product: string;
   productName: string;
