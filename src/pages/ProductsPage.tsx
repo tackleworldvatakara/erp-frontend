@@ -9,7 +9,7 @@ import {
   Add as AddIcon, Search as SearchIcon, Edit as EditIcon,
   Delete as DeleteIcon, ToggleOn as ToggleOnIcon, ToggleOff as ToggleOffIcon,
   Inventory2 as InventoryIcon, Close as CloseIcon,
-  Tune as TuneIcon,
+  Tune as TuneIcon, Visibility as VisibilityIcon, VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -106,6 +106,7 @@ export default function ProductsPage() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [categoryOptions,setCategoryOptions]= useState<string[]>([]);
   const [colorRows,      setColorRows]      = useState<ColorRow[]>([]);
+  const [showCost,       setShowCost]       = useState(false);
 
   const activeFilterCount = (statusFilter ? 1 : 0) +
     (categoryFilter ? 1 : 0) +
@@ -635,7 +636,18 @@ export default function ProductsPage() {
           <Table size="small">
             <TableHead>
               <TableRow sx={{ bgcolor: 'primary.main' }}>
-                {['Product', 'SKU', 'Category', 'Unit', 'Cost', 'Price', 'Stock', 'Product Status'].map((h) => (
+                {['Product', 'SKU', 'Category', 'Unit'].map((h) => (
+                  <TableCell key={h} sx={{ color: 'white', fontWeight: 700, whiteSpace: 'nowrap', py: 1.5, fontSize: 13 }}>
+                    {h}
+                  </TableCell>
+                ))}
+                <TableCell
+                  onDoubleClick={() => setShowCost((v) => !v)}
+                  sx={{ color: 'white', fontWeight: 700, whiteSpace: 'nowrap', py: 1.5, fontSize: 13, cursor: 'default', userSelect: 'none' }}
+                >
+                  Cost
+                </TableCell>
+                {['Price', 'Stock', 'Product Status'].map((h) => (
                   <TableCell key={h} sx={{ color: 'white', fontWeight: 700, whiteSpace: 'nowrap', py: 1.5, fontSize: 13 }}>
                     {h}
                   </TableCell>
@@ -696,7 +708,9 @@ export default function ProductsPage() {
                       <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{p.unit}</Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">{fmtCurrency(p.purchaseCost)}</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {showCost ? fmtCurrency(p.purchaseCost) : '—'}
+                      </Typography>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight={600} color="primary.main">{fmtCurrency(p.sellingPrice)}</Typography>
